@@ -219,3 +219,5 @@ app.listen(port, () => {
 // JWT token verification middleware configured
 
 // Books CRUD endpoints (GET, POST, PATCH, DELETE) active
+
+// Borrow and Return endpoints with copy tracking active
