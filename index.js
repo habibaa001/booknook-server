@@ -217,3 +217,5 @@ app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });
 // JWT token verification middleware configured
+
+// Books CRUD endpoints (GET, POST, PATCH, DELETE) active
