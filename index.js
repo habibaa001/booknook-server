@@ -10,9 +10,9 @@ const port = process.env.PORT || 5000;
 
 app.use(
   cors({
-    origin: [process.env.CLIENT_URL, "http://localhost:3000"],
+    origin: [process.env.CLIENT_URL, "http://localhost:3000", "http://localhost:3001"],
     credentials: true,
-  }),
+  })
 );
 app.use(express.json());
 app.use(cookieParser());
@@ -44,18 +44,19 @@ const verifyToken = (req, res, next) => {
 
 async function run() {
   try {
+    await client.connect();
     const db = client.db("booknook");
     const booksCollection = db.collection("books");
     const borrowsCollection = db.collection("borrows");
 
-    // Issue JWT Token
+    // 1. Issue JWT Token
     app.post("/jwt", async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: "7d" });
       res.send({ token });
     });
 
-    // 1. GET /books - All books or New Arrivals
+    // 2. GET /books - All books or New Arrivals
     app.get("/books", async (req, res) => {
       const { limit, sort } = req.query;
       let query = booksCollection.find();
@@ -69,7 +70,7 @@ async function run() {
       res.send(result);
     });
 
-    // 2. GET /books/:id - Single book
+    // 3. GET /books/:id - Single book
     app.get("/books/:id", async (req, res) => {
       const id = req.params.id;
       const result = await booksCollection.findOne({ _id: new ObjectId(id) });
@@ -77,7 +78,7 @@ async function run() {
       res.send(result);
     });
 
-    // 3. POST /books - Add new book (Protected)
+    // 4. POST /books - Add new book (Protected)
     app.post("/books", verifyToken, async (req, res) => {
       const bookData = {
         ...req.body,
@@ -89,7 +90,7 @@ async function run() {
       res.send(result);
     });
 
-    // 4. PATCH /books/:id - Update book (Protected)
+    // 5. PATCH /books/:id - Update book (Protected)
     app.patch("/books/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
@@ -107,19 +108,17 @@ async function run() {
       res.send(result);
     });
 
-    // 5. DELETE /books/:id - Delete book (Protected)
+    // 6. DELETE /books/:id - Delete book (Protected)
     app.delete("/books/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const result = await booksCollection.deleteOne({ _id: new ObjectId(id) });
       res.send(result);
     });
 
-    // 6. POST /borrows - Borrow book (Protected)
+    // 7. POST /borrows - Borrow book (Protected)
     app.post("/borrows", verifyToken, async (req, res) => {
-      const { bookId, bookTitle, bookImage, userEmail, userName, returnDate } =
-        req.body;
+      const { bookId, bookTitle, bookImage, userEmail, userName, returnDate } = req.body;
 
-      // Double borrow check
       const existingBorrow = await borrowsCollection.findOne({
         bookId,
         userEmail,
@@ -130,16 +129,14 @@ async function run() {
           .send({ message: "You have already borrowed this book!" });
       }
 
-      // Check available copies
       const book = await booksCollection.findOne({ _id: new ObjectId(bookId) });
       if (!book || book.availableCopies <= 0) {
         return res.status(400).send({ message: "Book is not available!" });
       }
 
-      // Decrement copy
       await booksCollection.updateOne(
         { _id: new ObjectId(bookId) },
-        { $inc: { availableCopies: -1 } },
+        { $inc: { availableCopies: -1 } }
       );
 
       const borrowDoc = {
@@ -155,11 +152,12 @@ async function run() {
             .toISOString()
             .split("T")[0],
       };
-      const result = await borrowsCollection.insertOne(borrowDoc);
-      res.send(result);
+      const result = await borrowsCollection.insertOnes
+      const insertResult = await borrowsCollection.insertOne(borrowDoc);
+      res.send(insertResult);
     });
 
-    // 7. GET /borrows - Logged in user borrows (Protected)
+    // 8. GET /borrows - Logged in user borrows (Protected)
     app.get("/borrows", verifyToken, async (req, res) => {
       const email = req.query.email;
       if (req.user.email !== email) {
@@ -171,7 +169,7 @@ async function run() {
       res.send(result);
     });
 
-    // 8. DELETE /borrows/:id - Return book (Protected)
+    // 9. DELETE /borrows/:id - Return book (Protected)
     app.delete("/borrows/:id", verifyToken, async (req, res) => {
       const id = req.params.id;
       const borrowRecord = await borrowsCollection.findOne({
@@ -181,10 +179,9 @@ async function run() {
         return res.status(404).send({ message: "Borrow record not found" });
       }
 
-      // Increment copies back
       await booksCollection.updateOne(
         { _id: new ObjectId(borrowRecord.bookId) },
-        { $inc: { availableCopies: 1 } },
+        { $inc: { availableCopies: 1 } }
       );
 
       const result = await borrowsCollection.deleteOne({
@@ -193,13 +190,10 @@ async function run() {
       res.send(result);
     });
 
+    // 10. Seed Books Endpoint
     app.get("/seed-books-force", async (req, res) => {
       try {
-        const db = client.db("booknook");
-        const booksCollection = db.collection("books");
-
         await booksCollection.deleteMany({});
-
         const initialBooks = [
           {
             title: "The Hobbit",
@@ -207,10 +201,8 @@ async function run() {
             category: "Fiction",
             totalCopies: 5,
             availableCopies: 4,
-            image:
-              "https://images.unsplash.com/photo-1621351183012-e2f9972dd9bf?w=500",
-            description:
-              "Bilbo Baggins leaves his quiet hole for a quest with thirteen dwarves.",
+            image: "https://images.unsplash.com/photo-1621351183012-e2f9972dd9bf?w=500",
+            description: "Bilbo Baggins leaves his quiet hole for a quest with thirteen dwarves.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-01"),
@@ -221,10 +213,8 @@ async function run() {
             category: "Fiction",
             totalCopies: 3,
             availableCopies: 3,
-            image:
-              "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=500",
-            description:
-              "Romantic novel following Elizabeth Bennet as she deals with manners and marriage.",
+            image: "https://images.unsplash.com/photo-1544716278-ca5c3f4abd8c?w=500",
+            description: "Romantic novel following Elizabeth Bennet as she deals with manners and marriage.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-02"),
@@ -235,10 +225,8 @@ async function run() {
             category: "Fiction",
             totalCopies: 4,
             availableCopies: 2,
-            image:
-              "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=500",
-            description:
-              "Dystopian social science fiction novel and cautionary tale.",
+            image: "https://images.unsplash.com/photo-1543002588-bfa74002ed7c?w=500",
+            description: "Dystopian social science fiction novel and cautionary tale.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-03"),
@@ -249,10 +237,8 @@ async function run() {
             category: "Fiction",
             totalCopies: 2,
             availableCopies: 1,
-            image:
-              "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=500",
-            description:
-              "A gripping portrayal of racial injustice in the American South.",
+            image: "https://images.unsplash.com/photo-1512820798803-83ca734da794?w=500",
+            description: "A gripping portrayal of racial injustice in the American South.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-04"),
@@ -263,10 +249,8 @@ async function run() {
             category: "Fiction",
             totalCopies: 4,
             availableCopies: 4,
-            image:
-              "https://images.unsplash.com/photo-1495640388908-05fa85288e61?w=500",
-            description:
-              "A portrait of the Jazz Age and the tragedy of the American dream.",
+            image: "https://images.unsplash.com/photo-1495640388908-05fa85288c61?w=500",
+            description: "A portrait of the Jazz Age and the tragedy of the American dream.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-05"),
@@ -277,10 +261,8 @@ async function run() {
             category: "Science",
             totalCopies: 3,
             availableCopies: 3,
-            image:
-              "https://images.unsplash.com/photo-1532012164546-f432f2e3777a?w=500",
-            description:
-              "Set on the desert planet Arrakis, Dune is the story of Paul Atreides.",
+            image: "https://images.unsplash.com/photo-1532012164546-f432f2e3777a?w=500",
+            description: "Set on the desert planet Arrakis, Dune is the story of Paul Atreides.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-06"),
@@ -291,8 +273,7 @@ async function run() {
             category: "Science",
             totalCopies: 5,
             availableCopies: 5,
-            image:
-              "https://images.unsplash.com/photo-1506880018603-83d5b814b5a6?w=500",
+            image: "https://images.unsplash.com/photo-1506880018603-83d5b814b5a6?w=500",
             description: "A lone astronaut must save the earth from disaster.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
@@ -304,10 +285,8 @@ async function run() {
             category: "Science",
             totalCopies: 4,
             availableCopies: 2,
-            image:
-              "https://images.unsplash.com/photo-1457369804613-52c61a468e7d?w=500",
-            description:
-              "An astronaut becomes stranded on Mars after a fierce storm.",
+            image: "https://images.unsplash.com/photo-1457369880461-52c61a468c7d?w=500",
+            description: "An astronaut becomes stranded on Mars after a fierce storm.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-08"),
@@ -318,10 +297,8 @@ async function run() {
             category: "Science",
             totalCopies: 3,
             availableCopies: 3,
-            image:
-              "https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=500",
-            description:
-              "A comedic interstellar journey through time and space.",
+            image: "https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=500",
+            description: "A comedic interstellar journey through time and space.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-09"),
@@ -332,10 +309,8 @@ async function run() {
             category: "Fiction",
             totalCopies: 3,
             availableCopies: 1,
-            image:
-              "https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=500",
-            description:
-              "The tale of Kvothe from his childhood into legendary renown.",
+            image: "https://images.unsplash.com/photo-1516979187457-637abb4f9353?w=500",
+            description: "The tale of Kvothe from his childhood into legendary renown.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-10"),
@@ -346,8 +321,7 @@ async function run() {
             category: "Science",
             totalCopies: 6,
             availableCopies: 6,
-            image:
-              "https://images.unsplash.com/photo-1509228468518-180dd4864904?w=500",
+            image: "https://images.unsplash.com/photo-1509228468518-188dd4864904?w=500",
             description: "Explores the profound questions about our universe.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
@@ -359,10 +333,8 @@ async function run() {
             category: "History",
             totalCopies: 4,
             availableCopies: 3,
-            image:
-              "https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=500",
-            description:
-              "Surveys the history of humankind from the Stone Age up to modern days.",
+            image: "https://images.unsplash.com/photo-1497633762265-9d179a998aa6?w=500",
+            description: "Surveys the history of humankind from the Stone Age up to modern days.",
             userEmail: "admin@booknook.app",
             userName: "Admin",
             createdAt: new Date("2026-03-12"),
@@ -384,6 +356,7 @@ async function run() {
     // Keep connection alive
   }
 }
+
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
@@ -393,4 +366,3 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
 });
-
